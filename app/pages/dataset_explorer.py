@@ -116,3 +116,15 @@ def render_dataset_explorer():
 
     st.markdown(f"Displaying **{min(100, len(filtered))}** sample rows (out of {len(filtered):,} matching):")
     st.dataframe(filtered.head(100), height=300, use_container_width=True)
+
+
+if __name__ == "__main__":
+    from pathlib import Path
+    import sys
+    ROOT = Path(__file__).resolve().parent.parent.parent
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
+    from app.streamlit_app import LOGO_PATH
+    if LOGO_PATH.is_file():
+        st.logo(str(LOGO_PATH), size="large")
+    render_dataset_explorer()

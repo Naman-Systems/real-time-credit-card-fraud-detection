@@ -39,10 +39,28 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Custom CSS for fintech aesthetic
+# Display SentinelFraud AI Brand Header at the very top of sidebar (above multipage sections)
+LOGO_PATH = PROJECT_ROOT / "app" / "static" / "sentinel_logo.svg"
+if LOGO_PATH.is_file():
+    st.logo(str(LOGO_PATH), size="large")
+
+# Custom CSS for fintech aesthetic and sidebar branding
 st.markdown(
     """
     <style>
+    /* Top Sidebar Header & Brand Logo */
+    [data-testid="stSidebarHeader"] {
+        display: flex !important;
+        align-items: center !important;
+        padding: 1.25rem 1rem 0.75rem 1rem !important;
+        border-bottom: 1px solid rgba(226, 232, 240, 0.15) !important;
+    }
+    [data-testid="stSidebarHeader"] img,
+    [data-testid="stLogo"] {
+        height: 60px !important;
+        max-height: 60px !important;
+        width: auto !important;
+    }
     .metric-card {
         background-color: #f8fafc;
         border: 1px solid #e2e8f0;
@@ -100,11 +118,8 @@ def initialize_session_state():
 def main():
     initialize_session_state()
 
-    # Sidebar Header
-    st.sidebar.markdown("## 🛡️ SentinelFraud AI")
-    st.sidebar.caption("Real-Time Credit Card Fraud Risk Engine")
-
     # Primary Navigation
+    st.sidebar.markdown("### 🧭 Navigation Console")
     pages = {
         "📊 Dashboard Overview": render_dashboard,
         "📡 Live Transaction Monitoring": render_live_monitoring,
@@ -188,7 +203,7 @@ def main():
     if selected_page_name == "📊 Dashboard Overview":
         render_dashboard(store, engine, simulator)
     elif selected_page_name == "📡 Live Transaction Monitoring":
-        render_live_monitoring(store, engine, simulator)
+        render_live_monitoring(store, engine, simulator, predictor=predictor)
     elif selected_page_name == "🚨 Fraud Alerts Queue":
         render_fraud_alerts(store, engine)
     elif selected_page_name == "🔍 Manual Transaction Scoring":

@@ -264,7 +264,7 @@ flowchart LR
 The web application provides six responsive pages:
 
 1. **📊 Executive Risk Dashboard:** Real-time KPI metrics, cumulative processing volume, decision breakdown pie chart, risk histogram, and dynamic transaction feed.
-2. **📡 Live Transaction Monitoring:** Interactive simulation stream controller (Start, Pause, Resume, Stop, Step 1, Step 20, Reset) with live suspicion rates.
+2. **📡 Live Transaction Monitoring:** Interactive simulation stream controller (Start, Pause, Resume, Stop, Step 1, Step 20, Reset) with live suspicion rates, plus an **Excel / CSV Batch File Predictor** tab for bulk uploading spreadsheets, automated missing feature imputation, decision breakdown analytics, and direct ingestion into the alert queue.
 3. **🚨 Fraud Alerts Queue:** Analyst case management for HIGH and MEDIUM risk transactions. Supports filtering by risk/status and disposition actions (**Mark Reviewed**, **Dismiss False Positive**).
 4. **🔍 Manual Transaction Scoring:** Interactive transaction diagnostic interface. Includes presets to load verified legitimate or fraudulent samples from the test partition without leaking `Class`.
 5. **📈 Model Analytics & Evaluation:** Comparative benchmark table across all models, interactive confusion matrix heatmap, Precision-Recall curve, ROC curve, and threshold optimization curves.

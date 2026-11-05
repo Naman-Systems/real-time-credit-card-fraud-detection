@@ -26,6 +26,9 @@ dataset/*.zip
 creditcard.csv
 ml/artifacts/*.csv
 
+# Internal documentation excluded per project configuration
+explain.md
+
 # Pytest / coverage cache
 .pytest_cache/
 .coverage

@@ -219,3 +219,15 @@ def render_model_analytics():
               to balance fraud deterrence against customer friction.
             """
         )
+
+
+if __name__ == "__main__":
+    from pathlib import Path
+    import sys
+    ROOT = Path(__file__).resolve().parent.parent.parent
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
+    from app.streamlit_app import LOGO_PATH
+    if LOGO_PATH.is_file():
+        st.logo(str(LOGO_PATH), size="large")
+    render_model_analytics()

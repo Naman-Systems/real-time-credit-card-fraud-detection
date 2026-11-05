@@ -138,3 +138,20 @@ def render_dashboard(store, decision_engine, simulator):
         )
     else:
         st.caption("Awaiting incoming transactions...")
+
+
+if __name__ == "__main__":
+    from pathlib import Path
+    import sys
+    ROOT = Path(__file__).resolve().parent.parent.parent
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
+    from app.streamlit_app import initialize_session_state, LOGO_PATH
+    if LOGO_PATH.is_file():
+        st.logo(str(LOGO_PATH), size="large")
+    initialize_session_state()
+    render_dashboard(
+        st.session_state["transaction_store"],
+        st.session_state["decision_engine"],
+        st.session_state["simulator"],
+    )

@@ -178,3 +178,22 @@ def render_manual_prediction(predictor, decision_engine, store, simulator):
 
         except Exception as e:
             st.error(f"Inference error: {e}")
+
+
+if __name__ == "__main__":
+    from pathlib import Path
+    import sys
+    ROOT = Path(__file__).resolve().parent.parent.parent
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
+    from app.streamlit_app import initialize_session_state, load_production_pipeline, LOGO_PATH
+    if LOGO_PATH.is_file():
+        st.logo(str(LOGO_PATH), size="large")
+    initialize_session_state()
+    predictor = load_production_pipeline()
+    render_manual_prediction(
+        predictor,
+        st.session_state["decision_engine"],
+        st.session_state["transaction_store"],
+        st.session_state["simulator"],
+    )
