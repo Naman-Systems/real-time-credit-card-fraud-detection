@@ -37,8 +37,9 @@ def render_manual_prediction(predictor, decision_engine, store, simulator):
 
     with preset_col1:
         if st.button("🟢 Load Real Legitimate Transaction", use_container_width=True):
-            if simulator._test_df is not None:
-                legit_samples = simulator._test_df[simulator._test_df["Class"] == 0]
+            test_df = getattr(simulator, "_test_df", None) if simulator is not None else None
+            if test_df is not None:
+                legit_samples = test_df[test_df["Class"] == 0]
                 if not legit_samples.empty:
                     chosen = legit_samples.sample(1, random_state=int(np.random.randint(1, 1000))).iloc[0]
                     st.session_state["manual_features"] = {c: float(chosen[c]) for c in FEATURE_COLUMNS}
@@ -47,8 +48,9 @@ def render_manual_prediction(predictor, decision_engine, store, simulator):
 
     with preset_col2:
         if st.button("🔴 Load Real Fraudulent Transaction", use_container_width=True):
-            if simulator._test_df is not None:
-                fraud_samples = simulator._test_df[simulator._test_df["Class"] == 1]
+            test_df = getattr(simulator, "_test_df", None) if simulator is not None else None
+            if test_df is not None:
+                fraud_samples = test_df[test_df["Class"] == 1]
                 if not fraud_samples.empty:
                     chosen = fraud_samples.sample(1, random_state=int(np.random.randint(1, 1000))).iloc[0]
                     st.session_state["manual_features"] = {c: float(chosen[c]) for c in FEATURE_COLUMNS}

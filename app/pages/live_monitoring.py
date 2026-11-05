@@ -70,6 +70,18 @@ def render_live_monitoring(store, decision_engine, simulator, predictor: Optiona
     if predictor is None:
         predictor = getattr(simulator, "predictor", None) or get_predictor()
 
+    if simulator is None:
+        from app.simulator import TransactionSimulator
+        try:
+            simulator = TransactionSimulator(
+                predictor=predictor,
+                decision_engine=decision_engine,
+                store=store,
+            )
+            st.session_state["simulator"] = simulator
+        except Exception:
+            simulator = None
+
     tab_stream, tab_excel = st.tabs(["📡 Live Replay Simulator", "📑 Excel / CSV Batch Predictor"])
 
     # =========================================================================
@@ -79,18 +91,23 @@ def render_live_monitoring(store, decision_engine, simulator, predictor: Optiona
         # Simulator Status Bar
         status_col1, status_col2, status_col3 = st.columns([1, 1, 1])
 
+        is_running = getattr(simulator, "is_running", False)
+        is_paused = getattr(simulator, "is_paused", False)
+        curr_idx = getattr(simulator, "current_index", 0)
+        total_len = getattr(simulator, "total_stream_length", 0)
+
         status_label = (
             "🟢 Streaming Active"
-            if simulator.is_running
-            else ("🟡 Paused" if simulator.is_paused else "⚪ Idle / Stopped")
+            if is_running
+            else ("🟡 Paused" if is_paused else "⚪ Idle / Stopped")
         )
         status_col1.markdown(f"**Stream Status:** `{status_label}`")
         status_col2.markdown(
-            f"**Progress:** `{simulator.current_index:,} / {simulator.total_stream_length:,}` transactions"
+            f"**Progress:** `{curr_idx:,} / {total_len:,}` transactions"
         )
 
-        stats = store.get_summary_statistics()
-        suspicion_rate = stats["fraud_suspicion_rate"]
+        stats = store.get_summary_statistics() if store else {"fraud_suspicion_rate": 0.0}
+        suspicion_rate = stats.get("fraud_suspicion_rate", 0.0)
         status_col3.markdown(f"**Suspicion Rate:** `{suspicion_rate:.2f}%`")
 
         st.markdown("---")
@@ -99,41 +116,47 @@ def render_live_monitoring(store, decision_engine, simulator, predictor: Optiona
         ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4, ctrl_col5, ctrl_col6 = st.columns(6)
 
         with ctrl_col1:
-            if st.button("▶️ Start / Run Stream", use_container_width=True, disabled=simulator.is_running):
-                simulator.start()
-                st.session_state["streaming_active"] = True
-                st.rerun()
+            if st.button("▶️ Start / Run Stream", use_container_width=True, disabled=is_running or simulator is None):
+                if simulator is not None:
+                    simulator.start()
+                    st.session_state["streaming_active"] = True
+                    st.rerun()
 
         with ctrl_col2:
-            if st.button("⏸️ Pause", use_container_width=True, disabled=not simulator.is_running):
-                simulator.pause()
-                st.session_state["streaming_active"] = False
-                st.rerun()
+            if st.button("⏸️ Pause", use_container_width=True, disabled=not is_running):
+                if simulator is not None:
+                    simulator.pause()
+                    st.session_state["streaming_active"] = False
+                    st.rerun()
 
         with ctrl_col3:
             if st.button(
-                "⏹️ Stop", use_container_width=True, disabled=not (simulator.is_running or simulator.is_paused)
+                "⏹️ Stop", use_container_width=True, disabled=not (is_running or is_paused)
             ):
-                simulator.stop()
-                st.session_state["streaming_active"] = False
-                st.rerun()
+                if simulator is not None:
+                    simulator.stop()
+                    st.session_state["streaming_active"] = False
+                    st.rerun()
 
         with ctrl_col4:
-            if st.button("⏭️ Step (1 Txn)", use_container_width=True):
-                res = simulator.step()
-                st.rerun()
+            if st.button("⏭️ Step (1 Txn)", use_container_width=True, disabled=simulator is None):
+                if simulator is not None:
+                    res = simulator.step()
+                    st.rerun()
 
         with ctrl_col5:
-            if st.button("⏩ Step Batch (20)", use_container_width=True):
-                simulator.step_batch(20)
-                st.rerun()
+            if st.button("⏩ Step Batch (20)", use_container_width=True, disabled=simulator is None):
+                if simulator is not None:
+                    simulator.step_batch(20)
+                    st.rerun()
 
         with ctrl_col6:
-            if st.button("🔄 Reset Stream", use_container_width=True):
-                simulator.reset()
-                st.session_state["streaming_active"] = False
-                st.success("Transaction stream and memory buffer reset.")
-                st.rerun()
+            if st.button("🔄 Reset Stream", use_container_width=True, disabled=simulator is None):
+                if simulator is not None:
+                    simulator.reset()
+                    st.session_state["streaming_active"] = False
+                    st.success("Transaction stream and memory buffer reset.")
+                    st.rerun()
 
         # Streaming Options Expander
         with st.expander("⚙️ Stream Simulation Settings", expanded=False):
@@ -144,8 +167,8 @@ def render_live_monitoring(store, decision_engine, simulator, predictor: Optiona
                 delay_sec = st.slider("Cycle Delay (Seconds)", min_value=0.1, max_value=2.0, value=0.5, step=0.1)
 
         # Active stream execution cycle
-        if st.session_state.get("streaming_active", False) and simulator.is_running:
-            if not simulator.is_finished:
+        if st.session_state.get("streaming_active", False) and is_running and simulator is not None:
+            if not getattr(simulator, "is_finished", False):
                 simulator.step_batch(batch_burst)
                 time.sleep(delay_sec)
                 st.rerun()

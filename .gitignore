@@ -25,6 +25,7 @@ dataset/*.csv
 dataset/*.zip
 creditcard.csv
 ml/artifacts/*.csv
+!ml/artifacts/held_out_test.csv.gz
 
 # Internal documentation excluded per project configuration
 explain.md

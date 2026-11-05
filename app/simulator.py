@@ -19,6 +19,7 @@ from app.config import (
     TARGET_COLUMN,
     TIME_COLUMN,
     AMOUNT_COLUMN,
+    PCA_FEATURES,
     DEFAULT_SIMULATION_INTERVAL_SEC,
 )
 from ml.preprocessing import load_dataset, chronological_split, validate_inference_features
@@ -54,17 +55,62 @@ class TransactionSimulator:
 
     def _load_held_out_data(self) -> None:
         """
-        Load held-out test data. If the saved test split doesn't exist, generate from dataset.
+        Load held-out test data. Checks uncompressed CSV, compressed gzip CSV,
+        regenerates from raw dataset, or falls back to synthetic generation.
         """
+        # 1. Try uncompressed held_out_test.csv
         if self.test_data_path.is_file():
-            self._test_df = pd.read_csv(self.test_data_path)
-        else:
-            # Fall back to regenerating chronological split
+            try:
+                self._test_df = pd.read_csv(self.test_data_path)
+                return
+            except Exception:
+                pass
+
+        # 2. Try compressed held_out_test.csv.gz (tracked in git for cloud deployments)
+        gz_path = self.test_data_path.with_suffix(".csv.gz")
+        if gz_path.is_file():
+            try:
+                self._test_df = pd.read_csv(gz_path)
+                return
+            except Exception:
+                pass
+
+        # 3. Try rebuilding chronological split from raw dataset
+        try:
             df = load_dataset()
             _, _, test_df = chronological_split(df)
             self._test_df = test_df
             self.test_data_path.parent.mkdir(parents=True, exist_ok=True)
             self._test_df.to_csv(self.test_data_path, index=False)
+            return
+        except Exception:
+            pass
+
+        # 4. Resilient Fallback: synthesize realistic streaming transactions
+        self._test_df = self._generate_fallback_stream(n_samples=500)
+
+    def _generate_fallback_stream(self, n_samples: int = 500) -> pd.DataFrame:
+        """Generate realistic synthetic transactions for cloud deployments without raw datasets."""
+        import numpy as np
+        np.random.seed(42)
+        rows = []
+        for i in range(n_samples):
+            is_fraud = (i % 25 == 0) and (i > 0)
+            row = {f: float(np.random.normal(0, 1)) for f in PCA_FEATURES}
+            row[AMOUNT_COLUMN] = round(float(np.random.exponential(scale=65.0) + 5.0), 2)
+            row[TIME_COLUMN] = float(i * 120)
+            if is_fraud:
+                row["V14"] = float(np.random.uniform(-10.0, -5.0))
+                row["V17"] = float(np.random.uniform(-8.0, -4.0))
+                row["V12"] = float(np.random.uniform(-7.0, -3.5))
+                row["V10"] = float(np.random.uniform(-6.0, -3.0))
+                row["V4"] = float(np.random.uniform(2.5, 6.0))
+                row["V11"] = float(np.random.uniform(2.0, 5.0))
+                row[TARGET_COLUMN] = 1
+            else:
+                row[TARGET_COLUMN] = 0
+            rows.append(row)
+        return pd.DataFrame(rows)
 
     @property
     def total_stream_length(self) -> int:

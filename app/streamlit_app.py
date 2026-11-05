@@ -102,16 +102,19 @@ def initialize_session_state():
     if "transaction_store" not in st.session_state:
         st.session_state["transaction_store"] = TransactionStore()
 
-    if "simulator" not in st.session_state:
+    if "simulator" not in st.session_state or st.session_state["simulator"] is None:
         try:
             predictor = load_production_pipeline()
+        except Exception:
+            predictor = None
+
+        try:
             st.session_state["simulator"] = TransactionSimulator(
                 predictor=predictor,
                 decision_engine=st.session_state["decision_engine"],
                 store=st.session_state["transaction_store"],
             )
         except Exception as e:
-            st.session_state["simulator"] = None
             st.session_state["init_error"] = str(e)
 
 
