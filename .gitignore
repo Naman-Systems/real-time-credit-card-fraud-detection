@@ -1,0 +1,32 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Environment variables
+.env
+.env.*
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Dataset files (large historical raw data excluded from version control)
+dataset/*.csv
+dataset/*.zip
+creditcard.csv
+ml/artifacts/*.csv
+
+# Pytest / coverage cache
+.pytest_cache/
+.coverage
+htmlcov/
