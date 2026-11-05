@@ -1,41 +1,95 @@
 """
 Page 6: Dataset Explorer & Historical EDA
-Provides interactive exploration of the historical ULB Credit Card Fraud dataset,
-including class imbalance analysis, amount distributions, time trends, and correlation heatmaps.
+Provides interactive exploration of the ULB Credit Card Fraud dataset.
+On Streamlit Cloud (no raw dataset available), falls back to the bundled
+compressed EDA sample (ml/artifacts/eda_sample.csv.gz) which contains
+all 52 fraud transactions plus 10,000 stratified legitimate records.
 """
 
 import streamlit as st
 import plotly.express as px
-import plotly.graph_objects as go
 import pandas as pd
-import numpy as np
-from app.config import DATASET_PATH, TARGET_COLUMN, TIME_COLUMN, AMOUNT_COLUMN, PCA_FEATURES
-from ml.preprocessing import load_dataset, get_dataset_summary
+from app.config import (
+    DATASET_PATH,
+    EDA_SAMPLE_GZ_PATH,
+    TARGET_COLUMN,
+    TIME_COLUMN,
+    AMOUNT_COLUMN,
+    PCA_FEATURES,
+)
+from ml.preprocessing import get_dataset_summary
 
 
 @st.cache_data
 def load_dataset_cached():
-    return load_dataset(DATASET_PATH)
+    """
+    Load the transaction dataset with a graceful three-tier fallback:
+    1. Full raw creditcard.csv (local dev or mounted volume).
+    2. Bundled compressed EDA sample ml/artifacts/eda_sample.csv.gz (Streamlit Cloud).
+    3. Synthetic placeholder (pure cloud fallback with no real data).
+    """
+    # Tier 1: full raw dataset
+    if DATASET_PATH.is_file():
+        import pandas as pd
+        df = pd.read_csv(DATASET_PATH)
+        return df, False  # (dataframe, is_sample)
+
+    # Tier 2: bundled compressed EDA sample
+    if EDA_SAMPLE_GZ_PATH.is_file():
+        import pandas as pd
+        df = pd.read_csv(EDA_SAMPLE_GZ_PATH)
+        return df, True  # is_sample=True — only 10k+52 rows
+
+    # Tier 3: fully synthetic fallback
+    import numpy as np
+    import pandas as pd
+    np.random.seed(42)
+    n = 5000
+    rows = {f: np.random.normal(0, 1, n) for f in PCA_FEATURES}
+    rows[AMOUNT_COLUMN] = np.abs(np.random.exponential(scale=65.0, size=n))
+    rows[TIME_COLUMN] = np.linspace(0, 172800, n)
+    rows[TARGET_COLUMN] = (np.random.rand(n) < 0.0017).astype(int)
+    df = pd.DataFrame(rows)
+    return df, True
 
 
 def render_dataset_explorer():
     st.markdown("## 🗃️ Historical Dataset Explorer & EDA")
     st.markdown(
-        "Interactive analysis of the ULB Machine Learning Group benchmark dataset (284,807 credit card transactions "
-        "recorded over two days in September 2013 by European cardholders)."
+        "Interactive analysis of the ULB Machine Learning Group benchmark dataset — "
+        "284,807 credit card transactions recorded over two days in September 2013 "
+        "by European cardholders."
     )
 
     try:
-        df = load_dataset_cached()
+        df, is_sample = load_dataset_cached()
     except Exception as e:
-        st.error(f"Error loading historical dataset: {e}")
+        st.error(
+            f"⚠️ Could not load any dataset source: `{e}`\n\n"
+            "On Streamlit Cloud the bundled EDA sample (`ml/artifacts/eda_sample.csv.gz`) "
+            "should be present. If you are running locally, place `creditcard.csv` in the "
+            "`dataset/` directory."
+        )
         return
+
+    # Cloud-mode banner
+    if is_sample:
+        st.info(
+            "📦 **Cloud Mode — Showing Stratified EDA Sample**\n\n"
+            "The full 150 MB raw dataset (`creditcard.csv`) is not bundled with this "
+            "deployment. All charts and correlations below are computed from the "
+            "bundled EDA sample: **all 52 fraud transactions + 10,000 randomly sampled "
+            "legitimate transactions** (out of the original 284,315).\n\n"
+            "To run the full explorer locally, download the dataset from Kaggle and "
+            "place it in the `dataset/` directory.",
+            icon="ℹ️",
+        )
 
     summary = get_dataset_summary(df)
 
     # 1. High-Level Dataset KPI Row
     d1, d2, d3, d4, d5 = st.columns(5)
-    d1.metric("Total Transactions", f"{summary['total_transactions']:,}")
+    d1.metric("Transactions (Sample)", f"{summary['total_transactions']:,}")
     d2.metric("Legitimate (Class 0)", f"{summary['legitimate_transactions']:,}")
     d3.metric("Fraud (Class 1)", f"{summary['fraudulent_transactions']:,}")
     d4.metric("Fraud Percentage", f"{summary['fraud_percentage']:.4f}%")
@@ -67,7 +121,7 @@ def render_dataset_explorer():
 
     with c_amt:
         st.markdown("### Transaction Amount Distribution (Log X)")
-        sample_df = df.sample(min(15000, len(df)), random_state=42).copy()
+        sample_df = df.sample(min(10000, len(df)), random_state=42).copy()
         sample_df["Type"] = sample_df["Class"].map({0: "Legitimate", 1: "Fraud"})
         fig_amt = px.histogram(
             sample_df,
@@ -83,30 +137,42 @@ def render_dataset_explorer():
 
     # 3. Top Correlations with Fraud
     st.markdown("### 🧬 Feature Correlations with Fraud Label (Class)")
-    correlations = df.corr()[TARGET_COLUMN].drop(TARGET_COLUMN).sort_values()
-    top_negative = correlations.head(6)
-    top_positive = correlations.tail(6)
-    top_corr = pd.concat([top_negative, top_positive]).reset_index()
-    top_corr.columns = ["Feature", "Correlation"]
+    numeric_df = df.select_dtypes(include="number")
+    if TARGET_COLUMN in numeric_df.columns:
+        correlations = numeric_df.corr()[TARGET_COLUMN].drop(TARGET_COLUMN).sort_values()
+        top_negative = correlations.head(6)
+        top_positive = correlations.tail(6)
+        top_corr = pd.concat([top_negative, top_positive]).reset_index()
+        top_corr.columns = ["Feature", "Correlation"]
 
-    fig_corr = px.bar(
-        top_corr,
-        x="Correlation",
-        y="Feature",
-        orientation="h",
-        color="Correlation",
-        color_continuous_scale="RdBu_r",
-    )
-    fig_corr.update_layout(height=340, margin=dict(t=30, b=20, l=20, r=20))
-    st.plotly_chart(fig_corr, use_container_width=True)
+        fig_corr = px.bar(
+            top_corr,
+            x="Correlation",
+            y="Feature",
+            orientation="h",
+            color="Correlation",
+            color_continuous_scale="RdBu_r",
+        )
+        fig_corr.update_layout(height=340, margin=dict(t=30, b=20, l=20, r=20))
+        st.plotly_chart(fig_corr, use_container_width=True)
 
     # 4. Filterable Dataset Table Sample
     st.markdown("### 🔍 Historical Transaction Data Browser")
     col_f1, col_f2 = st.columns(2)
     with col_f1:
-        class_choice = st.radio("Filter by Class Label", ["All", "Legitimate Only (0)", "Fraud Only (1)"], horizontal=True)
+        class_choice = st.radio(
+            "Filter by Class Label",
+            ["All", "Legitimate Only (0)", "Fraud Only (1)"],
+            horizontal=True,
+        )
     with col_f2:
-        max_amt_filter = st.slider("Max Amount Filter ($)", min_value=10.0, max_value=5000.0, value=2500.0, step=50.0)
+        max_amt_filter = st.slider(
+            "Max Amount Filter ($)",
+            min_value=10.0,
+            max_value=5000.0,
+            value=2500.0,
+            step=50.0,
+        )
 
     filtered = df[df["Amount"] <= max_amt_filter]
     if class_choice == "Legitimate Only (0)":

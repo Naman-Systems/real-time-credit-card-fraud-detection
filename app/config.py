@@ -17,6 +17,10 @@ MODEL_PATH = ARTIFACTS_DIR / "fraud_pipeline.pkl"
 METADATA_PATH = ARTIFACTS_DIR / "metadata.json"
 EVALUATION_METRICS_PATH = ARTIFACTS_DIR / "evaluation_metrics.json"
 
+# Cloud-safe bundled dataset assets (compressed, tracked in git)
+HELD_OUT_TEST_GZ_PATH = ARTIFACTS_DIR / "held_out_test.csv.gz"
+EDA_SAMPLE_GZ_PATH = ARTIFACTS_DIR / "eda_sample.csv.gz"
+
 # Feature definitions
 TARGET_COLUMN = "Class"
 TIME_COLUMN = "Time"
