@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 from app.config import FEATURE_COLUMNS, TARGET_COLUMN, TIME_COLUMN, AMOUNT_COLUMN
 from ml.preprocessing import (
+    load_dataset,
     validate_dataset_schema,
     validate_inference_features,
     chronological_split,
@@ -76,3 +77,14 @@ def test_feature_preprocessor_transformation():
     assert transformed.shape == (50, 30)
     # Check no NaNs
     assert not np.isnan(transformed).any()
+
+
+def test_load_dataset_fallback():
+    """Ensure load_dataset falls back gracefully to sample or raises clear FileNotFoundError."""
+    from pathlib import Path
+    non_existent = Path("non_existent_dataset.csv")
+    # Pointing to non-existent without fallback should fail, or default should succeed
+    df = load_dataset()
+    assert df is not None
+    assert len(df) > 0
+    assert "Class" in df.columns

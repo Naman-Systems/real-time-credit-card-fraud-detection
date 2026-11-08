@@ -22,7 +22,7 @@ import pandas as pd
 from sklearn.pipeline import Pipeline
 from sklearn.linear_model import LogisticRegression
 from sklearn.tree import DecisionTreeClassifier
-from sklearn.ensemble import RandomForestClassifier, IsolationForest
+from sklearn.ensemble import RandomForestClassifier
 from imblearn.pipeline import Pipeline as ImbPipeline
 from imblearn.over_sampling import SMOTE
 
@@ -178,47 +178,7 @@ def train_and_evaluate_all_models(
             val_metrics_opt["precision"],
         )
 
-    # Candidate E: Isolation Forest (Unsupervised Anomaly Experiment)
-    logger.info("Running Unsupervised Isolation Forest Experiment...")
-    try:
-        iso_forest = Pipeline([
-            ("preprocessor", build_feature_preprocessor()),
-            ("classifier", IsolationForest(
-                n_estimators=100,
-                contamination=0.002,
-                random_state=42,
-                n_jobs=-1
-            ))
-        ])
-        iso_forest.fit(X_train)
-        # Decision function: negative scores are outliers; convert to [0, 1] probability proxy
-        iso_scores = -iso_forest.named_steps["classifier"].score_samples(
-            iso_forest.named_steps["preprocessor"].transform(X_val)
-        )
-        # Min-max scale to proxy probability
-        iso_min, iso_max = iso_scores.min(), iso_scores.max()
-        iso_probs = (iso_scores - iso_min) / (iso_max - iso_min + 1e-9)
-        iso_val_metrics = compute_classification_metrics(y_val, iso_probs, threshold=0.5)
-        results["Isolation Forest (Unsupervised)"] = {
-            "default_metrics": iso_val_metrics,
-            "optimal_threshold": 0.5,
-            "optimized_metrics": iso_val_metrics,
-            "threshold_sweep": [],
-            "curves": get_curve_points(y_val, iso_probs),
-            "note": "Unsupervised anomaly detection baseline for comparison. Does not use training labels."
-        }
-        logger.info(
-            "Isolation Forest Val PR-AUC: %.4f | F1: %.4f | Recall: %.4f | Precision: %.4f",
-            iso_val_metrics["pr_auc"],
-            iso_val_metrics["f1_score"],
-            iso_val_metrics["recall"],
-            iso_val_metrics["precision"],
-        )
-    except Exception as e:
-        logger.warning("Isolation Forest experiment encountered exception: %s", e)
-
     # 4. Model Selection based on Validation PR-AUC and Optimized F1
-    # Supervised candidates only
     supervised_candidates = ["Logistic Regression", "Decision Tree", "Random Forest", "Random Forest + SMOTE"]
     best_candidate_name = max(
         supervised_candidates,

@@ -46,6 +46,17 @@ def load_dataset(filepath: Optional[Path] = None) -> pd.DataFrame:
     """
     path = Path(filepath) if filepath else DATASET_PATH
     if not path.is_file():
+        from app.config import EDA_SAMPLE_GZ_PATH
+        if EDA_SAMPLE_GZ_PATH.is_file():
+            logger.warning(
+                "Historical dataset not found at %s. Falling back to bundled compressed sample %s",
+                path,
+                EDA_SAMPLE_GZ_PATH,
+            )
+            df = pd.read_csv(EDA_SAMPLE_GZ_PATH)
+            validate_dataset_schema(df)
+            return df
+
         raise FileNotFoundError(
             f"Dataset not found at '{path}'.\n"
             "Please download the ULB Credit Card Fraud Detection dataset from Kaggle:\n"
