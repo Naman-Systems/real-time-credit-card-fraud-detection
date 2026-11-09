@@ -1,135 +1,221 @@
 """
-Page 2: Live Transaction Monitoring
-Provides an interactive transaction stream simulator with start/pause/step controls,
-real-time scoring, and risk categorization feed.
+Page 2: Live Transaction Monitoring and Batch File Scoring.
+Provides an Excel/CSV spreadsheet ingestion pipeline with automated feature validation,
+batch risk scoring, output display, and simulation of the last processed transaction.
 """
 
-import time
+from pathlib import Path
+import sys
 from typing import Optional
 import streamlit as st
 import pandas as pd
-from app.config import RISK_COLORS, DECISION_COLORS
-from ml.predictor import FraudPredictor
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from app.config import (
+    AMOUNT_COLUMN,
+    DECISION_COLORS,
+    FEATURE_COLUMNS,
+    PCA_FEATURES,
+    RISK_COLORS,
+    TIME_COLUMN,
+)
+from ml.predictor import FraudPredictor, get_predictor
+from app.decision_engine import FraudDecisionEngine
+from app.batch_processor import (
+    generate_sample_template,
+    process_transaction_file,
+    export_scored_data,
+)
 
 
-def render_live_monitoring(store, decision_engine, simulator, predictor: Optional[FraudPredictor] = None):
-    st.markdown("## 📡 Real-Time Transaction Monitoring")
+def render_live_monitoring(store=None, decision_engine: Optional[FraudDecisionEngine] = None, simulator=None, predictor: Optional[FraudPredictor] = None):
+    st.markdown("## 📡 Live Transaction Monitoring & Batch File Scoring")
     st.markdown(
-        "Simulate live transaction traffic by sequentially streaming out-of-time test transactions "
-        "through the production scoring pipeline and decision engine."
+        "Upload an Excel (`.xlsx`, `.xls`) or CSV (`.csv`) file to evaluate transactions against "
+        "the production fraud detection pipeline, view batch scoring outputs, and simulate the last processed transaction."
     )
 
-    if simulator is None:
-        st.warning("Transaction simulator is not initialized.")
+    if predictor is None:
+        predictor = getattr(simulator, "predictor", None) or get_predictor()
+
+    if decision_engine is None:
+        decision_engine = getattr(simulator, "decision_engine", None) or FraudDecisionEngine()
+
+    # 1. Download Templates & Quick Sample
+    col_t1, col_t2, col_t3 = st.columns([1, 1, 1])
+    with col_t1:
+        xlsx_template = generate_sample_template(simulator=simulator, file_format="xlsx")
+        st.download_button(
+            label="📥 Download Sample Excel (.xlsx)",
+            data=xlsx_template,
+            file_name="sample_transactions.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+        )
+    with col_t2:
+        csv_template = generate_sample_template(simulator=simulator, file_format="csv")
+        st.download_button(
+            label="📄 Download Sample CSV (.csv)",
+            data=csv_template,
+            file_name="sample_transactions.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+    with col_t3:
+        if st.button("⚡ Quick Test with Sample Data", use_container_width=True):
+            st.session_state["active_upload_bytes"] = generate_sample_template(simulator=simulator, file_format="xlsx")
+            st.session_state["active_upload_name"] = "sample_transactions.xlsx"
+            st.rerun()
+
+    # 2. File Upload Box
+    uploaded_file = st.file_uploader(
+        "Upload Transaction File (Excel or CSV)",
+        type=["csv", "xlsx", "xls"],
+        help="Upload an Excel spreadsheet or CSV containing transaction rows (Time, Amount, V1–V28).",
+    )
+
+    file_to_process = None
+    file_name = None
+
+    if uploaded_file is not None:
+        file_to_process = uploaded_file
+        file_name = uploaded_file.name
+    elif "active_upload_bytes" in st.session_state:
+        import io
+        file_to_process = io.BytesIO(st.session_state["active_upload_bytes"])
+        file_name = st.session_state.get("active_upload_name", "sample_transactions.xlsx")
+
+    if file_to_process is None:
+        st.info("👆 Please upload an Excel (.xlsx / .xls) or CSV file above, or click **⚡ Quick Test with Sample Data** to begin.")
         return
 
-    # Simulator Status Bar
-    status_col1, status_col2, status_col3 = st.columns([1, 1, 1])
+    # 3. Process File and Render Output
+    try:
+        scored_df, metrics, last_txn = process_transaction_file(
+            file_to_process, predictor=predictor, decision_engine=decision_engine
+        )
 
-    status_label = (
-        "🟢 Streaming Active"
-        if simulator.is_running
-        else ("🟡 Paused" if simulator.is_paused else "⚪ Idle / Stopped")
-    )
-    status_col1.markdown(f"**Stream Status:** `{status_label}`")
-    status_col2.markdown(
-        f"**Progress:** `{simulator.current_index:,} / {simulator.total_stream_length:,}` transactions"
-    )
+        st.success(f"Successfully processed `{file_name}` ({metrics['total_processed']} transactions).")
 
-    stats = store.get_summary_statistics() if store else {"fraud_suspicion_rate": 0.0}
-    suspicion_rate = stats.get("fraud_suspicion_rate", 0.0)
-    status_col3.markdown(f"**Suspicion Rate:** `{suspicion_rate:.2f}%`")
+        # Summary KPIs
+        m_col1, m_col2, m_col3, m_col4, m_col5 = st.columns(5)
+        m_col1.metric("Total Processed", f"{metrics['total_processed']:,}")
+        m_col2.metric("🟢 ALLOW (Low Risk)", f"{metrics['allow_count']:,}", f"{metrics['allow_rate']:.1f}%")
+        m_col3.metric("🟡 REVIEW (Medium Risk)", f"{metrics['review_count']:,}", f"{metrics['review_rate']:.1f}%")
+        m_col4.metric("🔴 BLOCK (High Risk)", f"{metrics['block_count']:,}", f"{metrics['block_rate']:.1f}%")
+        m_col5.metric("Peak Fraud Score", f"{metrics['max_fraud_prob']:.2%}")
 
-    st.markdown("---")
+        st.markdown("---")
 
-    # Control Panel
-    ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4, ctrl_col5, ctrl_col6 = st.columns(6)
+        # 4. Simulated Last Processed Transaction Section
+        st.markdown("### 📡 Simulated Last Processed Transaction")
+        st.caption("Real-time operational simulation of the final transaction from the processed batch.")
 
-    with ctrl_col1:
-        if st.button("▶️ Start / Run Stream", use_container_width=True, disabled=simulator.is_running):
-            simulator.start()
-            st.session_state["streaming_active"] = True
-            st.rerun()
+        risk = last_txn["risk_level"]
+        decision = last_txn["decision"]
+        prob = last_txn["fraud_probability"]
+        color = RISK_COLORS.get(risk, "#333")
 
-    with ctrl_col2:
-        if st.button("⏸️ Pause", use_container_width=True, disabled=not simulator.is_running):
-            simulator.pause()
-            st.session_state["streaming_active"] = False
-            st.rerun()
+        st.markdown(
+            f"""
+            <div style="padding: 18px 24px; border-radius: 10px; background-color: {color}15; border: 2px solid {color}; margin-bottom: 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <span style="font-size: 18px; font-weight: 700; color: #1E293B;">
+                        Transaction: <code style="font-size: 17px; color: {color};">{last_txn['transaction_id']}</code>
+                    </span>
+                    <span style="font-size: 13px; font-weight: 600; padding: 4px 10px; border-radius: 999px; background-color: {color}25; color: {color};">
+                        ● Real-Time Simulation Active
+                    </span>
+                </div>
+                <div style="display: flex; gap: 30px; flex-wrap: wrap; margin-bottom: 12px;">
+                    <div><span style="color: #64748B; font-size: 12px; font-weight: 600;">AMOUNT</span><br><strong style="font-size: 20px; color: #0F172A;">${last_txn['amount']:,.2f}</strong></div>
+                    <div><span style="color: #64748B; font-size: 12px; font-weight: 600;">ELAPSED TIME</span><br><strong style="font-size: 20px; color: #0F172A;">{last_txn['elapsed_time']:,.1f} s</strong></div>
+                    <div><span style="color: #64748B; font-size: 12px; font-weight: 600;">FRAUD PROBABILITY</span><br><strong style="font-size: 20px; color: {color};">{prob:.2%}</strong></div>
+                    <div><span style="color: #64748B; font-size: 12px; font-weight: 600;">ASSIGNED RISK BAND</span><br><strong style="font-size: 20px; color: {color};">{risk} RISK</strong></div>
+                    <div><span style="color: #64748B; font-size: 12px; font-weight: 600;">SYSTEM DECISION</span><br><strong style="font-size: 20px; color: {color};">{decision}</strong></div>
+                </div>
+                <div style="background-color: #FFFFFF; padding: 12px 16px; border-radius: 6px; border-left: 4px solid {color}; margin-top: 10px;">
+                    <strong style="color: #334155;">Decision Engine Rationale:</strong> {last_txn['explanation']}<br>
+                    <strong style="color: #334155; margin-top: 4px; display: inline-block;">Operational Policy:</strong> {last_txn['action']}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-    with ctrl_col3:
-        if st.button(
-            "⏹️ Stop", use_container_width=True, disabled=not (simulator.is_running or simulator.is_paused)
-        ):
-            simulator.stop()
-            st.session_state["streaming_active"] = False
-            st.rerun()
+        with st.expander("🔍 Inspect Diagnostic Feature Signals of Last Transaction", expanded=False):
+            f_cols = st.columns(6)
+            top_features = ["V14", "V17", "V12", "V10", "V4", "V11"]
+            features_dict = last_txn.get("features", {})
+            for i, feat in enumerate(top_features):
+                val = features_dict.get(feat, 0.0)
+                f_cols[i].metric(feat, f"{val:.4f}")
 
-    with ctrl_col4:
-        if st.button("⏭️ Step (1 Txn)", use_container_width=True):
-            simulator.step()
-            st.rerun()
+        if st.button("🔄 Re-simulate Last Transaction"):
+            st.toast(f"Simulated transaction {last_txn['transaction_id']}: Decision {decision} ({prob:.2%})", icon="⚡")
 
-    with ctrl_col5:
-        if st.button("⏩ Step Batch (20)", use_container_width=True):
-            simulator.step_batch(20)
-            st.rerun()
+        st.markdown("---")
 
-    with ctrl_col6:
-        if st.button("🔄 Reset Stream", use_container_width=True):
-            simulator.reset()
-            st.session_state["streaming_active"] = False
-            st.success("Transaction stream and memory buffer reset.")
-            st.rerun()
+        # 5. Full Processed Output Table
+        st.markdown("### 📋 Processed Batch Transactions")
 
-    # Streaming Options Expander
-    with st.expander("⚙️ Stream Simulation Settings", expanded=False):
-        opt_col1, opt_col2 = st.columns(2)
-        with opt_col1:
-            batch_burst = st.slider("Burst Transactions per Cycle", min_value=1, max_value=50, value=5, step=1)
-        with opt_col2:
-            delay_sec = st.slider("Cycle Delay (Seconds)", min_value=0.1, max_value=2.0, value=0.5, step=0.1)
+        filter_choice = st.radio(
+            "Filter output by decision:",
+            ["All", "ALLOW", "REVIEW", "BLOCK"],
+            horizontal=True,
+        )
 
-    # Active stream execution cycle
-    if st.session_state.get("streaming_active", False) and simulator.is_running:
-        if not simulator.is_finished:
-            simulator.step_batch(batch_burst)
-            time.sleep(delay_sec)
-            st.rerun()
-        else:
-            simulator.stop()
-            st.session_state["streaming_active"] = False
-            st.info("Reached end of test transaction stream.")
+        display_df = scored_df.copy()
+        if filter_choice != "All":
+            display_df = display_df[display_df["Decision"] == filter_choice]
 
-    # Live Feed Section
-    st.markdown("### 📋 Live Ingestion Feed (Recent 30)")
-    recent = store.get_recent_transactions(limit=30) if store else []
-
-    if recent:
-        feed_data = []
-        for r in recent:
-            feed_data.append({
-                "Txn ID": r["transaction_id"],
-                "Elapsed (s)": f"{r['elapsed_time']:,.1f}",
-                "Amount": f"${r['amount']:,.2f}",
-                "Fraud Prob": f"{r['fraud_probability']:.2%}",
-                "Risk Level": r["risk_level"],
-                "Decision": r["decision"],
-                "Status": r["review_status"],
-            })
-        feed_df = pd.DataFrame(feed_data)
+        # Formatting table columns
+        formatted_table = display_df.copy()
+        formatted_table["Amount ($)"] = formatted_table["Amount ($)"].map(lambda x: f"${x:,.2f}")
+        formatted_table["Fraud Probability"] = formatted_table["Fraud Probability"].map(lambda x: f"{x:.2%}")
 
         st.dataframe(
-            feed_df,
+            formatted_table,
             hide_index=True,
             use_container_width=True,
-            column_config={
-                "Txn ID": st.column_config.TextColumn("Txn ID", width="small"),
-                "Amount": st.column_config.TextColumn("Amount ($)", width="small"),
-                "Fraud Prob": st.column_config.TextColumn("Fraud Score", width="small"),
-                "Risk Level": st.column_config.TextColumn("Risk Level", width="small"),
-                "Decision": st.column_config.TextColumn("Action Decision", width="small"),
-            },
         )
-    else:
-        st.info("No incoming transactions yet. Click **▶️ Start Stream** or **⏭️ Step** above.")
+
+        # 6. Download Scored Output
+        st.markdown("### 💾 Export Processed Results")
+        d_col1, d_col2 = st.columns(2)
+        with d_col1:
+            excel_bytes = export_scored_data(scored_df, file_format="xlsx")
+            st.download_button(
+                label="📥 Download Scored Results (.xlsx)",
+                data=excel_bytes,
+                file_name=f"scored_{file_name.replace('.csv', '')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
+        with d_col2:
+            csv_bytes = export_scored_data(scored_df, file_format="csv")
+            st.download_button(
+                label="📄 Download Scored Results (.csv)",
+                data=csv_bytes,
+                file_name=f"scored_{file_name.replace('.xlsx', '')}.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
+
+    except Exception as err:
+        st.error(f"❌ Error processing transaction spreadsheet: {err}")
+
+
+if __name__ == "__main__":
+    from app.streamlit_app import initialize_session_state, LOGO_PATH
+    if LOGO_PATH.is_file():
+        st.logo(str(LOGO_PATH), size="large")
+    initialize_session_state()
+    render_live_monitoring(
+        st.session_state["transaction_store"],
+        st.session_state["decision_engine"],
+        st.session_state["simulator"],
+    )

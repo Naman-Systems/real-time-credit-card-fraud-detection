@@ -4,7 +4,7 @@
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.58.0-FF4B4B.svg)](https://streamlit.io/)
 [![Scikit-Learn](https://img.shields.io/badge/scikit--learn-1.8.0-F7931E.svg)](https://scikit-learn.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests: Pytest](https://img.shields.io/badge/tests-23%20passed-brightgreen.svg)](tests/)
+[![Tests: Pytest](https://img.shields.io/badge/tests-28%20passed-brightgreen.svg)](tests/)
 
 An end-to-end, production-grade Machine Learning and Streamlit application for detecting fraudulent credit card transactions in real-time. Built with rigorous class-imbalance handling, chronological data partitioning (zero data leakage), Bayesian decision threshold optimization, a configurable risk decision engine, an in-memory streaming replay engine, and automated unit testing.
 
@@ -352,7 +352,13 @@ real-time-credit-card-fraud-detection/
 ```
 
 ---
-
+## Screenshots
+![alt text](image.png)
+![alt text](image-1.png)
+![alt text](image-2.png)
+![alt text](image-3.png)
+![alt text](image-4.png)
+![alt text](image-5.png)
 ## 19. Installation & Setup
 
 ### Prerequisites
